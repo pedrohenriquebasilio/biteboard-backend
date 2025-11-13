@@ -1,0 +1,126 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+enum OrderStatus {
+  NEW
+  PREPARING
+  READY
+  DELIVERED
+}
+
+enum DiscountType {
+  PERCENTAGE
+  FIXED
+}
+
+model Restaurant {
+  id          String       @id @default(uuid())
+  name        String
+  email       String       @unique
+  password    String
+  phone       String?
+  createdAt   DateTime     @default(now())
+}
+
+model User {
+  id           String       @id @default(uuid())
+  email        String       @unique
+  name         String
+  password     String
+  role         String       @default("admin")
+  createdAt    DateTime     @default(now())
+}
+
+model MenuItem {
+  id           String       @id @default(uuid())
+  name         String
+  description  String?
+  price        Float
+  category     String
+  image        String?
+  available    Boolean      @default(true)
+  orderItems   OrderItem[]
+}
+
+model Promotion {
+  id            String        @id @default(uuid())
+  name          String
+  description   String?
+  discount      Float
+  discountType  DiscountType
+  validFrom     DateTime
+  validUntil    DateTime
+  active        Boolean       @default(true)
+  createdAt     DateTime      @default(now())
+}
+
+model Order {
+  id             String       @id @default(uuid())
+  customerName   String
+  customerPhone  String
+  total          Float
+  status         OrderStatus  @default(NEW)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  items          OrderItem[]
+}
+
+model Customer {
+  id        String   @id @default(uuid())
+  name      String
+  phone     String   @unique
+  createdAt DateTime @default(now())
+}
+
+model OrderItem {
+  id         String    @id @default(uuid())
+  orderId    String
+  menuItemId String?
+  name       String
+  quantity   Int
+  price      Float
+  notes      String?
+  order      Order     @relation(fields: [orderId], references: [id])
+  menuItem   MenuItem? @relation(fields: [menuItemId], references: [id])
+}
+
+model Conversation {
+  id              String    @id @default(uuid())
+  restaurantId    String    // Para multi-tenant depois
+  customerName    String
+  customerPhone   String
+  lastMessage     String?
+  lastMessageTime DateTime?
+  unreadCount     Int       @default(0)
+  status          String    @default("active") // active, closed
+  orderId         String?   // Relacionar com pedido se tiver
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  messages        Message[]
+
+  @@unique([restaurantId, customerPhone])
+  @@index([restaurantId, status])
+  @@index([lastMessageTime])
+}
+model Message {
+  id                 String       @id @default(uuid())
+  conversationId     String
+  text               String
+  sender             String       // customer, restaurant
+  status             String       // sent, delivered, read
+  messageType        String       @default("text") // text, image, audio, document
+  mediaUrl           String?
+  whatsappMessageId  String?      @unique
+  timestamp          DateTime     @default(now())
+  conversation       Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@index([conversationId, timestamp])
+  @@index([whatsappMessageId])
+}
+
+
