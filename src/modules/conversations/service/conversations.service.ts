@@ -129,6 +129,7 @@ export class ConversationsService {
     };
   }
 
+  // WEBHOOK AJUSTADO PARA EVOLUTION
   async handleWebhook(payload: unknown) {
     const normalizedMessages = this.extractIncomingMessages(payload);
 
@@ -137,7 +138,7 @@ export class ConversationsService {
         success: true,
         processed: 0,
         skipped: true,
-        reason: 'Payload sem mensagens processáveis',
+        reason: 'Nenhuma mensagem de entrada processável',
       };
     }
 
@@ -149,14 +150,12 @@ export class ConversationsService {
         incoming.customerName,
       );
 
+      // Evitar duplicatas
       if (incoming.messageId) {
         const existing = await this.prisma.message.findUnique({
           where: { whatsappMessageId: incoming.messageId },
         });
-
-        if (existing) {
-          continue;
-        }
+        if (existing) continue;
       }
 
       const createdMessage = await this.prisma.message.create({
@@ -203,169 +202,63 @@ export class ConversationsService {
     };
   }
 
+  // EXTRAI MENSAGENS DO FORMATO EVOLUTION
   private extractIncomingMessages(
     payload: unknown,
   ): NormalizedIncomingMessage[] {
-    const items = Array.isArray(payload) ? payload : [payload];
-    const records = items
-      .map((item) => (this.isRecord(item) ? item : null))
-      .filter((item): item is JsonRecord => item !== null);
+    if (!this.isRecord(payload)) return [];
 
+    const items = Array.isArray(payload) ? payload : [payload];
     const messages: NormalizedIncomingMessage[] = [];
 
-    for (const record of records) {
-      const normalized = this.extractMessageFromRecord(record);
-      if (normalized) {
-        messages.push(normalized);
-      }
+    for (const item of items) {
+      if (!this.isRecord(item)) continue;
+
+      const msg = this.extractFromEvolutionFormat(item);
+      if (msg) messages.push(msg);
     }
 
     return messages;
   }
 
-  private extractMessageFromRecord(
+  // FORMATO ESPECÍFICO DO EVOLUTION
+  private extractFromEvolutionFormat(
     record: JsonRecord,
   ): NormalizedIncomingMessage | null {
-    const dataRecord = this.getRecord(record.data) ?? record;
-    const messageEntries = this.extractMessageEntries(dataRecord);
-    const primaryEntry =
-      messageEntries.length > 0 ? messageEntries[0] : dataRecord;
+    const key = this.getRecord(record.key);
+    const message = this.getRecord(record.message);
+    const pushName = this.getString(record, 'pushName');
 
-    const keyRecord =
-      this.getRecord(primaryEntry.key) ?? this.getRecord(dataRecord.key);
+    if (!key || !message) return null;
 
-    if (keyRecord) {
-      const fromMe = this.getBoolean(keyRecord, 'fromMe');
-      if (fromMe) {
-        return null;
-      }
-    }
+    const fromMe = this.getBoolean(key, 'fromMe');
+    if (fromMe) return null; // Ignora mensagens enviadas pelo bot
 
-    const remoteJid =
-      this.getString(primaryEntry, 'sender') ??
-      (keyRecord ? this.getString(keyRecord, 'remoteJid') : undefined) ??
-      this.getString(dataRecord, 'sender') ??
-      this.getNestedString(dataRecord, ['info', 'remoteJid']) ??
-      this.getString(record, 'sender');
+    const rawJid = this.getString(key, 'remoteJid');
+    const phone = rawJid ? this.normalizePhone(rawJid) : undefined;
+    if (!phone) return null;
 
-    const phone = remoteJid ? this.normalizePhone(remoteJid) : undefined;
+    const messageId = this.getString(key, 'id');
+    const text =
+      this.getString(message, 'conversation') || '[Mensagem sem texto]';
 
-    if (!phone) {
-      return null;
-    }
-
-    const customerName =
-      this.getString(primaryEntry, 'pushName') ??
-      this.getString(dataRecord, 'pushName') ??
-      this.getString(record, 'pushName');
-
-    const messageId =
-      (keyRecord ? this.getString(keyRecord, 'id') : undefined) ??
-      this.getString(primaryEntry, 'id') ??
-      this.getString(dataRecord, 'id') ??
-      this.getNestedString(primaryEntry, ['info', 'id']);
-
-    const messageRecord =
-      this.getRecord(primaryEntry.message) ??
-      this.getRecord(dataRecord.message);
-
-    const text = messageRecord
-      ? this.extractTextFromMessageRecord(messageRecord)
-      : undefined;
-
-    const messageType =
-      this.getString(primaryEntry, 'messageType') ??
-      this.getString(dataRecord, 'messageType') ??
-      (messageRecord ? this.getString(messageRecord, 'type') : undefined) ??
-      'text';
-
-    const timestampValue =
-      this.getNumber(primaryEntry, 'messageTimestamp') ??
-      this.getNumber(dataRecord, 'messageTimestamp') ??
-      this.getNumber(record, 'messageTimestamp');
+    // Tenta extrair timestamp (pode vir em segundos ou milissegundos)
+    const timestampSec =
+      this.getNumber(record, 'messageTimestamp') ||
+      this.getNumber(message, 'messageTimestamp') ||
+      this.getNumber(key, 'messageTimestamp');
 
     return {
       phone,
-      text: text ?? '[Mensagem recebida]',
-      messageId: messageId || undefined,
-      customerName,
-      messageType,
-      timestamp: this.buildDate(timestampValue),
+      text,
+      messageId,
+      customerName: pushName,
+      messageType: 'text',
+      timestamp: this.buildDate(timestampSec),
     };
   }
 
-  private extractMessageEntries(record: JsonRecord): JsonRecord[] {
-    const messagesValue = record.messages;
-    if (!messagesValue || !Array.isArray(messagesValue)) {
-      return [];
-    }
-
-    return messagesValue
-      .map((entry) => (this.isRecord(entry) ? entry : null))
-      .filter((entry): entry is JsonRecord => entry !== null);
-  }
-
-  private extractTextFromMessageRecord(
-    messageRecord: JsonRecord,
-  ): string | undefined {
-    const conversation = this.getString(messageRecord, 'conversation');
-    if (conversation) {
-      return conversation;
-    }
-
-    const extended = this.getRecord(messageRecord.extendedTextMessage);
-    if (extended) {
-      const text = this.getString(extended, 'text');
-      if (text) {
-        return text;
-      }
-    }
-
-    const image = this.getRecord(messageRecord.imageMessage);
-    if (image) {
-      const caption = this.getString(image, 'caption');
-      if (caption) {
-        return caption;
-      }
-    }
-
-    const document = this.getRecord(messageRecord.documentMessage);
-    if (document) {
-      const caption = this.getString(document, 'caption');
-      if (caption) {
-        return caption;
-      }
-    }
-
-    const interactive = this.getRecord(
-      messageRecord.interactiveResponseMessage,
-    );
-    if (interactive) {
-      const body = this.getRecord(interactive.body);
-      if (body) {
-        const text = this.getString(body, 'text');
-        if (text) {
-          return text;
-        }
-      }
-    }
-
-    const buttonsResponseMessage = this.getRecord(
-      messageRecord.buttonsResponseMessage,
-    );
-    if (buttonsResponseMessage) {
-      const selectedDisplayText = this.getString(
-        buttonsResponseMessage,
-        'selectedDisplayText',
-      );
-      if (selectedDisplayText) {
-        return selectedDisplayText;
-      }
-    }
-
-    return undefined;
-  }
-
+  // MANTIDOS (usados em outras partes)
   private async ensureConversation(phone: string, name?: string) {
     const existing = await this.prisma.conversation.findFirst({
       where: {
@@ -387,7 +280,6 @@ export class ConversationsService {
           data: { customerName: normalizedName },
         });
       }
-
       return existing;
     }
 
@@ -403,33 +295,17 @@ export class ConversationsService {
   }
 
   private normalizePhone(raw: string): string | undefined {
-    if (!raw) {
-      return undefined;
-    }
-
+    if (!raw) return undefined;
     const withoutDomain = raw.includes('@') ? raw.split('@')[0] : raw;
-
     const digits = withoutDomain.replace(/\D/g, '');
-    if (!digits) {
-      return undefined;
-    }
-
-    if (withoutDomain.startsWith('+')) {
-      return `+${digits}`;
-    }
-
+    if (!digits) return undefined;
     return digits.startsWith('+') ? digits : `+${digits}`;
   }
 
   private buildDate(value: number | undefined): Date {
     if (typeof value === 'number' && Number.isFinite(value)) {
-      if (value > 1e12) {
-        return new Date(value);
-      }
-
-      return new Date(value * 1000);
+      return value > 1e12 ? new Date(value) : new Date(value * 1000);
     }
-
     return new Date();
   }
 
@@ -445,92 +321,32 @@ export class ConversationsService {
     record: JsonRecord | undefined,
     key: string,
   ): string | undefined {
-    if (!record) {
-      return undefined;
-    }
-
+    if (!record) return undefined;
     const value = record[key];
-    if (typeof value === 'string' && value.trim().length > 0) {
-      return value;
-    }
-
-    return undefined;
+    return typeof value === 'string' && value.trim().length > 0
+      ? value
+      : undefined;
   }
 
   private getNumber(
     record: JsonRecord | undefined,
     key: string,
   ): number | undefined {
-    if (!record) {
-      return undefined;
-    }
-
+    if (!record) return undefined;
     const value = record[key];
-    if (typeof value === 'number' && Number.isFinite(value)) {
-      return value;
-    }
-
+    if (typeof value === 'number' && Number.isFinite(value)) return value;
     if (typeof value === 'string') {
       const parsed = Number(value);
-      if (!Number.isNaN(parsed)) {
-        return parsed;
-      }
+      if (!Number.isNaN(parsed)) return parsed;
     }
-
     return undefined;
   }
 
   private getBoolean(record: JsonRecord, key: string): boolean {
     const value = record[key];
-    if (typeof value === 'boolean') {
-      return value;
-    }
-
-    if (typeof value === 'string') {
-      return value === 'true';
-    }
-
-    if (typeof value === 'number') {
-      return value === 1;
-    }
-
+    if (typeof value === 'boolean') return value;
+    if (typeof value === 'string') return value === 'true';
+    if (typeof value === 'number') return value === 1;
     return false;
-  }
-
-  private getNestedString(
-    record: JsonRecord | undefined,
-    path: (string | number)[],
-  ): string | undefined {
-    if (!record) {
-      return undefined;
-    }
-
-    const value = this.getNestedValue(record, path);
-    return typeof value === 'string' && value.trim().length > 0
-      ? value
-      : undefined;
-  }
-
-  private getNestedValue(
-    source: JsonRecord,
-    path: (string | number)[],
-  ): unknown {
-    let current: unknown = source;
-
-    for (const segment of path) {
-      if (typeof segment === 'number') {
-        if (!Array.isArray(current) || current.length <= segment) {
-          return undefined;
-        }
-        current = current[segment];
-      } else {
-        if (!this.isRecord(current)) {
-          return undefined;
-        }
-        current = current[segment];
-      }
-    }
-
-    return current;
   }
 }
