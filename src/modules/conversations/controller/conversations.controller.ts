@@ -13,10 +13,7 @@ export class ConversationsController {
   }
 
   @Get(':phone/messages')
-  getMessages(
-    @Param('phone') phone: string,
-    @Query() query: MessagesQueryDto,
-  ) {
+  getMessages(@Param('phone') phone: string, @Query() query: MessagesQueryDto) {
     return this.conversationsService.getMessagesByPhone(phone, query);
   }
 }

@@ -5,7 +5,6 @@ import {
   OnGatewayConnection,
   OnGatewayDisconnect,
   ConnectedSocket,
-  MessageBody,
 } from '@nestjs/websockets';
 import { Server, Socket } from 'socket.io';
 import { Logger } from '@nestjs/common';
@@ -84,6 +83,25 @@ export class RealtimeGateway
   // Eventos de Mensagens
   emitNewMessage(message: Record<string, unknown>) {
     this.logger.log(`Emitindo nova mensagem: ${String(message.id)}`);
+    // Log em stdout para facilitar debug em tempo de execução
+    try {
+      const payloadStr = JSON.stringify(
+        { event: 'message:new', data: message },
+        null,
+        2,
+      );
+      console.log(
+        '[RealtimeGateway] Emitindo evento "message:new":',
+        payloadStr,
+      );
+    } catch (error) {
+      console.log(
+        '[RealtimeGateway] Emitindo evento "message:new" (payload não serializável)',
+      );
+      console.error(error);
+      console.log(message);
+    }
+
     this.server.emit('message:new', {
       event: 'message:new',
       data: message,

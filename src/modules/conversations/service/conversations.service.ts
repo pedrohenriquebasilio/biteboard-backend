@@ -180,15 +180,11 @@ export class ConversationsService {
       });
 
       this.realtimeGateway.emitNewMessage({
-        id: createdMessage.id,
         text: createdMessage.text,
+        timestamp: createdMessage.timestamp.toISOString(),
         sender: createdMessage.sender,
-        status: createdMessage.status,
-        messageType: createdMessage.messageType,
-        timestamp: createdMessage.timestamp,
-        whatsappMessageId: createdMessage.whatsappMessageId,
         conversation: {
-          id: conversation.customerPhone,
+          customerPhone: conversation.customerPhone,
           customerName: conversation.customerName,
         },
       });
