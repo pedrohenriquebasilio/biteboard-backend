@@ -13,6 +13,7 @@ interface NormalizedIncomingMessage {
   messageId?: string;
   customerName?: string;
   messageType?: string;
+  fromMe?: boolean;
 }
 
 @Injectable()
@@ -162,12 +163,23 @@ export class ConversationsService {
         data: {
           conversationId: conversation.id,
           text: incoming.text,
-          sender: 'customer',
+          sender: incoming.fromMe ? 'server' : 'customer',
           status: 'received',
           messageType: incoming.messageType || 'text',
           whatsappMessageId: incoming.messageId ?? null,
           timestamp: incoming.timestamp,
         },
+      });
+
+      console.log('[ConversationsService] Nova mensagem criada:', {
+        id: createdMessage.id,
+        text: createdMessage.text,
+        sender: createdMessage.sender,
+        messageType: createdMessage.messageType,
+        status: createdMessage.status,
+        timestamp: createdMessage.timestamp,
+        conversationId: conversation.customerPhone,
+        customerName: conversation.customerName,
       });
 
       await this.prisma.conversation.update({
@@ -228,7 +240,6 @@ export class ConversationsService {
     if (!key || !message) return null;
 
     const fromMe = this.getBoolean(key, 'fromMe');
-    if (fromMe) return null; // Ignora mensagens enviadas pelo bot
 
     const rawJid = this.getString(key, 'remoteJid');
     const phone = rawJid ? this.normalizePhone(rawJid) : undefined;
@@ -251,6 +262,7 @@ export class ConversationsService {
       customerName: pushName,
       messageType: 'text',
       timestamp: this.buildDate(timestampSec),
+      fromMe,
     };
   }
 
