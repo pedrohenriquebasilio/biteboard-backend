@@ -20,24 +20,37 @@ export class OrdersService {
   async create(createOrderDto: CreateOrderDto) {
     const { customerName, customerPhone, items } = createOrderDto;
 
-    const menuItemIds = items
-      .filter((item) => item.menuItemId)
-      .map((item) => item.menuItemId!)
-      .filter((id): id is string => id !== undefined);
-
-    if (menuItemIds.length > 0) {
-      const menuItems = await this.prisma.menuItem.findMany({
-        where: { id: { in: menuItemIds } },
-      });
-
-      if (menuItems.length !== menuItemIds.length) {
-        throw new BadRequestException(
-          'Um ou mais itens do menu não foram encontrados',
-        );
-      }
+    // Validar que todos os itens têm menuItemId
+    if (!items || items.length === 0) {
+      throw new BadRequestException('Pedido deve ter pelo menos um item');
     }
 
-    const total = this.calculateTotal(items);
+    const menuItemIds = items.map((item) => item.menuItemId);
+
+    // Buscar todos os itens do menu
+    const menuItems = await this.prisma.menuItem.findMany({
+      where: { id: { in: menuItemIds } },
+    });
+
+    if (menuItems.length !== menuItemIds.length) {
+      throw new BadRequestException(
+        'Um ou mais itens do menu não foram encontrados',
+      );
+    }
+
+    // Criar mapa de preços por ID
+    const priceMap = new Map(menuItems.map((item) => [item.id, item.price]));
+
+    // Preparar items com preço calculado
+    const itemsWithPrice = items.map((item) => ({
+      menuItemId: item.menuItemId,
+      name: menuItems.find((mi) => mi.id === item.menuItemId)?.name || '',
+      quantity: item.quantity,
+      price: priceMap.get(item.menuItemId) || 0,
+      notes: null,
+    }));
+
+    const total = this.calculateTotal(itemsWithPrice);
 
     const order = await this.prisma.order.create({
       data: {
@@ -46,13 +59,7 @@ export class OrdersService {
         total,
         status: OrderStatus.NEW,
         items: {
-          create: items.map((item) => ({
-            menuItemId: item.menuItemId || null,
-            name: item.name,
-            quantity: item.quantity,
-            price: item.price,
-            notes: item.notes || null,
-          })),
+          create: itemsWithPrice,
         },
       },
       include: {
