@@ -130,7 +130,80 @@ export class ConversationsService {
     };
   }
 
-  // WEBHOOK AJUSTADO PARA EVOLUTION
+  async createAndSendMessage(
+    phone: string,
+    createMessageDto: {
+      conversationId: string;
+      text: string;
+      messageType?: string;
+    },
+  ) {
+    const normalizedPhone = this.normalizePhone(phone);
+    if (!normalizedPhone) {
+      throw new NotFoundException('Telefone inválido');
+    }
+
+    const conversation = await this.prisma.conversation.findFirst({
+      where: {
+        restaurantId: this.restaurantId,
+        customerPhone: normalizedPhone,
+      },
+    });
+
+    if (!conversation) {
+      throw new NotFoundException('Conversa não encontrada');
+    }
+
+    const createdMessage = await this.prisma.message.create({
+      data: {
+        conversationId: conversation.id,
+        text: createMessageDto.text,
+        sender: 'server',
+        status: 'sent',
+        messageType: createMessageDto.messageType || 'text',
+        whatsappMessageId: null,
+        timestamp: new Date(),
+      },
+    });
+
+    console.log('[ConversationsService] Nova mensagem criada (servidor):', {
+      id: createdMessage.id,
+      text: createdMessage.text,
+      sender: createdMessage.sender,
+      messageType: createdMessage.messageType,
+      status: createdMessage.status,
+      timestamp: createdMessage.timestamp,
+      conversationId: conversation.customerPhone,
+      customerName: conversation.customerName,
+    });
+
+    await this.prisma.conversation.update({
+      where: { id: conversation.id },
+      data: {
+        lastMessage: createdMessage.text,
+        lastMessageTime: createdMessage.timestamp,
+      },
+    });
+
+    this.realtimeGateway.emitNewMessage({
+      text: createdMessage.text,
+      timestamp: createdMessage.timestamp.toISOString(),
+      sender: createdMessage.sender,
+      conversation: {
+        customerPhone: conversation.customerPhone,
+        customerName: conversation.customerName,
+      },
+    });
+
+    return {
+      id: createdMessage.id,
+      conversationId: conversation.customerPhone,
+      text: createdMessage.text,
+      sender: createdMessage.sender,
+      timestamp: createdMessage.timestamp.toISOString(),
+      status: createdMessage.status,
+    };
+  }
   async handleWebhook(payload: unknown) {
     const normalizedMessages = this.extractIncomingMessages(payload);
 

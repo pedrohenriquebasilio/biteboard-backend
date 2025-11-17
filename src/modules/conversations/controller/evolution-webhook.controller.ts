@@ -1,8 +1,6 @@
 import { Body, Controller, Post } from '@nestjs/common';
 import { ConversationsService } from '../service/conversations.service';
 import { EvolutionWebhookDto } from '../dto/evolution-webhook.dto';
-
-
 @Controller('webhook')
 export class EvolutionWebhookController {
   constructor(private readonly conversationsService: ConversationsService) {}
