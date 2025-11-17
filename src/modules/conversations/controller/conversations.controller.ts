@@ -28,4 +28,15 @@ export class ConversationsController {
       createMessageDto,
     );
   }
+
+  @Post(':phone/messages/servidor')
+  sendMessageServer(
+    @Param('phone') phone: string,
+    @Body() createMessageDto: CreateMessageDto,
+  ) {
+    return this.conversationsService.createAndSendMessageWithoutWebhook(
+      phone,
+      createMessageDto,
+    );
+  }
 }
