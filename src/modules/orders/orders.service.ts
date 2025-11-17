@@ -20,35 +20,65 @@ export class OrdersService {
   async create(createOrderDto: CreateOrderDto) {
     const { customerName, customerPhone, items } = createOrderDto;
 
-    // Validar que todos os itens têm menuItemId
+    // Validar que todos os itens têm menuItemId ou menuItemName
     if (!items || items.length === 0) {
       throw new BadRequestException('Pedido deve ter pelo menos um item');
     }
 
-    const menuItemIds = items.map((item) => item.menuItemId);
+    // Validar que cada item tem ID ou nome
+    for (const item of items) {
+      if (!item.menuItemId && !item.menuItemName) {
+        throw new BadRequestException(
+          'Cada item deve ter menuItemId ou menuItemName',
+        );
+      }
+    }
 
-    // Buscar todos os itens do menu
+    // Buscar todos os itens do menu por ID e por nome
+    const menuItemIds = items
+      .filter((item) => item.menuItemId)
+      .map((item) => item.menuItemId!);
+
+    const menuItemNames = items
+      .filter((item) => item.menuItemName && !item.menuItemId)
+      .map((item) => item.menuItemName!);
+
     const menuItems = await this.prisma.menuItem.findMany({
-      where: { id: { in: menuItemIds } },
+      where: {
+        OR: [{ id: { in: menuItemIds } }, { name: { in: menuItemNames } }],
+      },
     });
 
-    if (menuItems.length !== menuItemIds.length) {
+    if (menuItems.length !== items.length) {
       throw new BadRequestException(
         'Um ou mais itens do menu não foram encontrados',
       );
     }
 
-    // Criar mapa de preços por ID
-    const priceMap = new Map(menuItems.map((item) => [item.id, item.price]));
+    // Criar mapa de preços por ID e por nome
+    const priceMapById = new Map(menuItems.map((item) => [item.id, item]));
+    const priceMapByName = new Map(menuItems.map((item) => [item.name, item]));
 
     // Preparar items com preço calculado
-    const itemsWithPrice = items.map((item) => ({
-      menuItemId: item.menuItemId,
-      name: menuItems.find((mi) => mi.id === item.menuItemId)?.name || '',
-      quantity: item.quantity,
-      price: priceMap.get(item.menuItemId) || 0,
-      notes: null,
-    }));
+    const itemsWithPrice = items.map((item) => {
+      const menuItem =
+        (item.menuItemId && priceMapById.get(item.menuItemId)) ||
+        (item.menuItemName && priceMapByName.get(item.menuItemName));
+
+      if (!menuItem) {
+        throw new BadRequestException(
+          `Item não encontrado: ${item.menuItemId || item.menuItemName}`,
+        );
+      }
+
+      return {
+        menuItemId: menuItem.id,
+        name: menuItem.name,
+        quantity: item.quantity,
+        price: menuItem.price,
+        notes: null,
+      };
+    });
 
     const total = this.calculateTotal(itemsWithPrice);
 

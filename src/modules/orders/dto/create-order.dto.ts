@@ -5,13 +5,18 @@ import {
   ValidateNested,
   IsNumber,
   Min,
+  IsOptional,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 
 class OrderItemDto {
   @IsString()
-  @IsNotEmpty()
-  menuItemId: string;
+  @IsOptional()
+  menuItemId?: string;
+
+  @IsString()
+  @IsOptional()
+  menuItemName?: string;
 
   @IsNumber()
   @Min(1)
