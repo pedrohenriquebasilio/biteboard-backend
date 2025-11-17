@@ -1,4 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import axios from 'axios';
 import { PrismaService } from 'src/modules/prisma/prisma.service';
 import { RealtimeGateway } from 'src/modules/realtime/realtime.gateway';
 import { ConversationQueryDto } from '../dto/conversation-query.dto';
@@ -23,6 +25,7 @@ export class ConversationsService {
   constructor(
     private prisma: PrismaService,
     private realtimeGateway: RealtimeGateway,
+    private configService: ConfigService,
   ) {}
 
   async findAll(query: ConversationQueryDto) {
@@ -195,6 +198,17 @@ export class ConversationsService {
       },
     });
 
+    // Enviar para webhook N8N
+    await this.sendToN8nWebhook({
+      id: createdMessage.id,
+      conversationId: conversation.customerPhone,
+      text: createdMessage.text,
+      sender: createdMessage.sender,
+      timestamp: createdMessage.timestamp.toISOString(),
+      status: createdMessage.status,
+      customerName: conversation.customerName,
+    });
+
     return {
       id: createdMessage.id,
       conversationId: conversation.customerPhone,
@@ -203,6 +217,42 @@ export class ConversationsService {
       timestamp: createdMessage.timestamp.toISOString(),
       status: createdMessage.status,
     };
+  }
+
+  private async sendToN8nWebhook(messageData: {
+    id: string;
+    conversationId: string;
+    text: string;
+    sender: string;
+    timestamp: string;
+    status: string;
+    customerName: string;
+  }): Promise<void> {
+    try {
+      const webhookUrl = this.configService.get<string>(
+        'WEBHOOK_SEND_MESSAGE_URL',
+      );
+
+      if (!webhookUrl) {
+        console.warn(
+          '[ConversationsService] WEBHOOK_SEND_MESSAGE_URL não configurada',
+        );
+        return;
+      }
+
+      await axios.post(webhookUrl, messageData);
+
+      console.log('[ConversationsService] Mensagem enviada para N8N webhook:', {
+        messageId: messageData.id,
+        text: messageData.text,
+        timestamp: messageData.timestamp,
+      });
+    } catch (error) {
+      console.error(
+        '[ConversationsService] Erro ao enviar para N8N webhook:',
+        error instanceof Error ? error.message : 'Erro desconhecido',
+      );
+    }
   }
   async handleWebhook(payload: unknown) {
     const normalizedMessages = this.extractIncomingMessages(payload);
