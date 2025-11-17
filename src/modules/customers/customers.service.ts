@@ -24,12 +24,10 @@ export class CustomersService {
     });
 
     if (!customer) {
-      throw new NotFoundException(
-        `Customer com telefone ${phone} não encontrado`,
-      );
+      return [];
     }
 
-    return customer;
+    return [customer];
   }
 
   async getAddress(phone: string) {
