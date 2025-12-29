@@ -7,9 +7,7 @@ export class WebhookGatewayController {
   constructor(private readonly webhookGatewayService: WebhookGatewayService) {}
 
   @Post()
-  async handleWebhook(
-    @Body() payload: WebhookPayloadDto | WebhookPayloadDto[],
-  ) {
+  handleWebhook(@Body() payload: WebhookPayloadDto | WebhookPayloadDto[]) {
     // Aceita tanto array quanto objeto único
     const payloads = Array.isArray(payload) ? payload : [payload];
 

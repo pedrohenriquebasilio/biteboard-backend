@@ -28,12 +28,20 @@ export class WebhookGatewayService {
    */
   async routeWebhook(payload: WebhookPayloadDto): Promise<void> {
     try {
-      // Extrair o sender do payload - pode estar em body.sender ou body.data.sender
-      // Prioridade: body.sender primeiro (formato mais comum no webhook.md)
-      const sender = payload.body?.sender || payload.body?.data?.sender;
+      // Extrair o sender do payload - pode estar em sender ou data.sender
+      // Prioridade: sender primeiro (campo direto no payload)
+      let sender: string | undefined = payload.sender as string | undefined;
 
-      if (!sender) {
-        this.logger.warn('Campo sender não encontrado no payload do webhook');
+      if (!sender && payload.data && typeof payload.data === 'object') {
+        const dataSender = (payload.data as { sender?: string }).sender;
+        sender = dataSender;
+      }
+
+      if (!sender || typeof sender !== 'string') {
+        this.logger.warn(
+          'Campo sender não encontrado no payload do webhook',
+          JSON.stringify(payload, null, 2),
+        );
         return;
       }
 
@@ -41,12 +49,15 @@ export class WebhookGatewayService {
       const phoneNumber = this.extractPhoneNumber(sender);
 
       if (!phoneNumber) {
-        this.logger.warn(`Não foi possível extrair número de telefone do sender: ${sender}`);
+        this.logger.warn(
+          `Não foi possível extrair número de telefone do sender: ${sender}`,
+        );
         return;
       }
 
       // Verificação fail-fast: verifica se o cliente existe na base
-      const customerExists = await this.customersService.existsByPhone(phoneNumber);
+      const customerExists =
+        await this.customersService.existsByPhone(phoneNumber);
 
       // Determinar qual webhook usar baseado na existência do cliente
       const webhookUrl = customerExists.exists
@@ -83,4 +94,3 @@ export class WebhookGatewayService {
     }
   }
 }
-
