@@ -1,19 +1,27 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { FinancialQueryDto, FinancialPeriod } from './dto/financial-query.dto';
-import { FinancialSummary, PeriodRevenue } from './interfcaes/financial.interface';
+import {
+  FinancialSummary,
+  PeriodRevenue,
+} from './interfcaes/financial.interface';
 
 @Injectable()
 export class FinancialService {
   constructor(private prisma: PrismaService) {}
 
   async getSummary(query: FinancialQueryDto): Promise<FinancialSummary> {
-    const { startDate, endDate } = query;
+    const { startDate, endDate, period } = query;
 
     const start = startDate
       ? new Date(startDate)
-      : this.getDefaultStartDate(query.period);
+      : this.getDefaultStartDate(period);
     const end = endDate ? new Date(endDate) : new Date();
+
+    // Garantir que start é antes de end
+    if (start > end) {
+      throw new Error('startDate deve ser anterior a endDate');
+    }
 
     // Total de receita e pedidos
     const ordersData = await this.prisma.order.aggregate({
@@ -52,6 +60,11 @@ export class FinancialService {
       : this.getDefaultStartDate(period);
     const end = endDate ? new Date(endDate) : new Date();
 
+    // Garantir que start é antes de end
+    if (start > end) {
+      throw new Error('startDate deve ser anterior a endDate');
+    }
+
     const orders = await this.prisma.order.findMany({
       where: {
         createdAt: {
@@ -72,7 +85,10 @@ export class FinancialService {
     const periodMap = new Map<string, { revenue: number; orders: number }>();
 
     orders.forEach((order) => {
-      const key = this.getPeriodKey(new Date(order.createdAt), period);
+      const key = this.getPeriodKey(
+        new Date(order.createdAt),
+        period || FinancialPeriod.DAILY,
+      );
       const current = periodMap.get(key) || { revenue: 0, orders: 0 };
 
       periodMap.set(key, {
@@ -128,11 +144,14 @@ export class FinancialService {
     }));
   }
 
-  private getDefaultStartDate(period: FinancialPeriod): Date {
+  private getDefaultStartDate(period?: FinancialPeriod): Date {
     const now = new Date();
     const start = new Date(now);
 
-    switch (period) {
+    // Se não especificar período, usa últimos 30 dias como padrão
+    const selectedPeriod = period || FinancialPeriod.DAILY;
+
+    switch (selectedPeriod) {
       case FinancialPeriod.DAILY:
         start.setDate(start.getDate() - 30); // Últimos 30 dias
         break;

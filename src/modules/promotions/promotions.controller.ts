@@ -6,13 +6,10 @@ import {
   Patch,
   Param,
   Delete,
-  Query,
 } from '@nestjs/common';
 import { PromotionsService } from './promotions.service';
 import { CreatePromotionDto } from './dto/create-promotion.dto';
 import { UpdatePromotionDto } from './dto/update-promotion.dto';
-import { TogglePromotionDto } from './dto/toggle-promotion.dto';
-import { PromotionFilterDto } from './dto/promotion-filter.dto';
 
 @Controller('promotions')
 export class PromotionsController {
@@ -24,8 +21,8 @@ export class PromotionsController {
   }
 
   @Get()
-  findAll(@Query() filters: PromotionFilterDto) {
-    return this.promotionsService.findAll(filters);
+  findAll() {
+    return this.promotionsService.findAll();
   }
 
   @Get('active')
@@ -33,9 +30,14 @@ export class PromotionsController {
     return this.promotionsService.getActivePromotions();
   }
 
+  @Get('menu-item/:menuItemId')
+  getPromotionByMenuItem(@Param('menuItemId') menuItemId: string) {
+    return this.promotionsService.getPromotionByMenuItem(menuItemId);
+  }
+
   @Get(':id')
   findOne(@Param('id') id: string) {
-    return this.promotionsService.findOne(id); // ← SEM +id
+    return this.promotionsService.findOne(id);
   }
 
   @Patch(':id')
@@ -43,37 +45,11 @@ export class PromotionsController {
     @Param('id') id: string,
     @Body() updatePromotionDto: UpdatePromotionDto,
   ) {
-    return this.promotionsService.update(id, updatePromotionDto); // ← SEM +id
-  }
-
-  @Patch(':id/toggle')
-  toggleActive(
-    @Param('id') id: string,
-    @Body() togglePromotionDto: TogglePromotionDto,
-  ) {
-    return this.promotionsService.toggleActive(id, togglePromotionDto);
+    return this.promotionsService.update(id, updatePromotionDto);
   }
 
   @Delete(':id')
   remove(@Param('id') id: string) {
-    return this.promotionsService.remove(id); // ← SEM +id
-  }
-
-  @Get(':id/calculate')
-  calculateDiscount(@Param('id') id: string, @Query('price') price: string) {
-    const originalPrice = parseFloat(price);
-    if (isNaN(originalPrice)) {
-      return { error: 'Preço inválido' };
-    }
-    return this.promotionsService.calculateDiscount(originalPrice, id);
-  }
-
-  @Get('apply/best')
-  applyBestPromotion(@Query('price') price: string) {
-    const originalPrice = parseFloat(price);
-    if (isNaN(originalPrice)) {
-      return { error: 'Preço inválido' };
-    }
-    return this.promotionsService.applyBestPromotion(originalPrice);
+    return this.promotionsService.remove(id);
   }
 }

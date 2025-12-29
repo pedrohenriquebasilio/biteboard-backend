@@ -1,13 +1,12 @@
-import { Promotion as PrismaPromotion, DiscountType } from '@prisma/client';
+import { Promotion as PrismaPromotion } from '@prisma/client';
 
 export class Promotion implements PrismaPromotion {
   id: string;
-  name: string;
-  description: string | null;
-  discount: number;
-  discountType: DiscountType;
+  menuItemId: string;
+  priceCurrent: number;
   validFrom: Date;
   validUntil: Date;
   active: boolean;
   createdAt: Date;
+  updatedAt: Date;
 }

@@ -16,7 +16,7 @@ export class CreateMenuItemDto {
   description?: string;
 
   @IsNumber()
-  price: number;
+  priceReal: number;
 
   @IsString()
   @IsNotEmpty()

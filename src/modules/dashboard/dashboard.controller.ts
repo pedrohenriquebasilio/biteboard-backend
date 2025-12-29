@@ -7,12 +7,19 @@ export class DashboardController {
   constructor(private readonly dashboardService: DashboardService) {}
 
   @Get('stats')
-  getStats() {
-    return this.dashboardService.getStats();
+  async getStats() {
+    const stats = await this.dashboardService.getStats();
+    return { data: stats };
+  }
+
+  @Get('metrics')
+  async getMetrics() {
+    const metrics = await this.dashboardService.getMetrics();
+    return { data: metrics };
   }
 
   @Get('revenue')
-  getRevenue(@Query() query: RevenueQueryDto) {
+  async getRevenue(@Query() query: RevenueQueryDto) {
     return this.dashboardService.getRevenue(query);
   }
 

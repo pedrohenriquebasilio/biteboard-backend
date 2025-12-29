@@ -8,7 +8,8 @@ export enum FinancialPeriod {
 
 export class FinancialQueryDto {
   @IsEnum(FinancialPeriod)
-  period: FinancialPeriod;
+  @IsOptional()
+  period?: FinancialPeriod = FinancialPeriod.DAILY;
 
   @IsOptional()
   @IsDateString()

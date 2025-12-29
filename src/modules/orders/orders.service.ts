@@ -75,7 +75,7 @@ export class OrdersService {
         menuItemId: menuItem.id,
         name: menuItem.name,
         quantity: item.quantity,
-        price: menuItem.price,
+        price: menuItem.priceCurrent,
         notes: null,
       };
     });
@@ -188,12 +188,21 @@ export class OrdersService {
   async remove(id: string) {
     await this.findOne(id);
 
+    // Primeiro deletar todos os itens do pedido
+    await this.prisma.orderItem.deleteMany({
+      where: {
+        orderId: id,
+      },
+    });
+
+    // Depois deletar o pedido
     await this.prisma.order.delete({
       where: { id },
     });
 
     return { message: `Pedido #${id} removido com sucesso` };
   }
+
   private calculateTotal(
     items: Array<{ quantity: number; price: number }>,
   ): number {

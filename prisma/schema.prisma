@@ -13,11 +13,6 @@ enum OrderStatus {
   DELIVERED
 }
 
-enum DiscountType {
-  PERCENTAGE
-  FIXED
-}
-
 model Restaurant {
   id          String       @id @default(uuid())
   name        String
@@ -37,26 +32,28 @@ model User {
 }
 
 model MenuItem {
-  id           String       @id @default(uuid())
-  name         String
-  description  String?
-  price        Float
-  category     String
-  image        String?
-  available    Boolean      @default(true)
-  orderItems   OrderItem[]
+  id             String       @id @default(uuid())
+  name           String
+  description    String?
+  priceReal      Float        // Preço original
+  priceCurrent   Float        // Preço atual (pode ter desconto aplicado)
+  category       String
+  image          String?
+  available      Boolean      @default(true)
+  orderItems     OrderItem[]
+  promotion      Promotion?   // Uma promoção ativa por item
 }
 
 model Promotion {
-  id            String        @id @default(uuid())
-  name          String
-  description   String?
-  discount      Float
-  discountType  DiscountType
-  validFrom     DateTime
-  validUntil    DateTime
-  active        Boolean       @default(true)
-  createdAt     DateTime      @default(now())
+  id             String        @id @default(uuid())
+  menuItemId     String        @unique // Um item pode ter apenas uma promoção ativa
+  menuItem       MenuItem      @relation(fields: [menuItemId], references: [id], onDelete: Cascade)
+  priceCurrent   Float        // Novo valor com desconto aplicado
+  validFrom      DateTime
+  validUntil     DateTime
+  active         Boolean       @default(true)
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
 }
 
 model Order {

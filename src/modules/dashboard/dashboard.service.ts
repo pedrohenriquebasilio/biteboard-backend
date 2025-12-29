@@ -3,6 +3,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { RevenueQueryDto, RevenuePeriod } from './dto/revenue-query.dto';
 import {
   DashboardStats,
+  DashboardMetrics,
   RevenueResponse,
 } from './interfaces/dashboard.interface';
 import { OrderStatus } from '@prisma/client';
@@ -47,15 +48,35 @@ export class DashboardService {
       },
     });
 
+    // Pedidos em preparo de hoje
     const ordersInProgress = await this.prisma.order.count({
       where: {
-        status: OrderStatus.PREPARING,
+        createdAt: {
+          gte: today,
+          lt: tomorrow,
+        },
+        status: {
+          notIn: [OrderStatus.READY, OrderStatus.DELIVERED],
+        },
       },
     });
 
+    // Pedidos prontos ou entregues de hoje
     const ordersReady = await this.prisma.order.count({
       where: {
-        status: OrderStatus.READY,
+        createdAt: {
+          gte: today,
+          lt: tomorrow,
+        },
+        status: {
+          in: [OrderStatus.READY, OrderStatus.DELIVERED],
+        },
+      },
+    });
+
+    const activeConversations = await this.prisma.conversation.count({
+      where: {
+        status: 'active',
       },
     });
 
@@ -63,8 +84,125 @@ export class DashboardService {
       todayOrders,
       todayRevenue: todayRevenueData._sum.total || 0,
       activeOrders,
+      activeConversations,
       ordersInProgress,
       ordersReady,
+    };
+  }
+
+  async getMetrics(): Promise<DashboardMetrics> {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+
+    // Buscar pedidos de hoje
+    const todayOrders = await this.prisma.order.count({
+      where: {
+        createdAt: {
+          gte: today,
+          lt: tomorrow,
+        },
+      },
+    });
+
+    // Pedidos completos de hoje (READY ou DELIVERED)
+    const completedTodayOrders = await this.prisma.order.count({
+      where: {
+        createdAt: {
+          gte: today,
+          lt: tomorrow,
+        },
+        status: {
+          in: [OrderStatus.READY, OrderStatus.DELIVERED],
+        },
+      },
+    });
+
+    // Calcular taxa de conclusão (percentual de pedidos prontos ou entregues hoje)
+    const completionRate =
+      todayOrders > 0
+        ? Math.round((completedTodayOrders / todayOrders) * 100)
+        : 0;
+
+    // Pedidos em progresso de hoje (NÃO são READY nem DELIVERED)
+    const ordersInProgress = await this.prisma.order.count({
+      where: {
+        createdAt: {
+          gte: today,
+          lt: tomorrow,
+        },
+        status: {
+          notIn: [OrderStatus.READY, OrderStatus.DELIVERED],
+        },
+      },
+    });
+
+    // Calcular ticket médio de hoje
+    const todayRevenueData = await this.prisma.order.aggregate({
+      where: {
+        createdAt: {
+          gte: today,
+          lt: tomorrow,
+        },
+      },
+      _sum: {
+        total: true,
+      },
+    });
+
+    const averageTicket =
+      todayOrders > 0
+        ? Math.round((todayRevenueData._sum.total || 0 / todayOrders) * 100) /
+          100
+        : 0;
+
+    // Calcular SLA de pedidos (tempo médio de criação até READY)
+    const currentMonth = new Date();
+    const startOfMonth = new Date(
+      currentMonth.getFullYear(),
+      currentMonth.getMonth(),
+      1,
+    );
+    const endOfMonth = new Date(
+      currentMonth.getFullYear(),
+      currentMonth.getMonth() + 1,
+      0,
+    );
+
+    // Buscar pedidos que ficaram prontos este mês para calcular o SLA
+    const completedOrders = await this.prisma.order.findMany({
+      where: {
+        status: {
+          in: [OrderStatus.READY, OrderStatus.DELIVERED],
+        },
+        updatedAt: {
+          gte: startOfMonth,
+          lte: endOfMonth,
+        },
+      },
+      select: {
+        createdAt: true,
+        updatedAt: true,
+      },
+    });
+
+    let orderSLA = 0;
+    if (completedOrders.length > 0) {
+      const totalMinutes = completedOrders.reduce((sum, order) => {
+        const diffMs = order.updatedAt.getTime() - order.createdAt.getTime();
+        const diffMinutes = diffMs / (1000 * 60);
+        return sum + diffMinutes;
+      }, 0);
+      orderSLA = Math.round(totalMinutes / completedOrders.length);
+    }
+
+    return {
+      completionRate,
+      averageTicket,
+      ordersInProgress,
+      orderSLA,
     };
   }
 
@@ -117,11 +255,12 @@ export class DashboardService {
         case RevenuePeriod.DAILY:
           key = date.toISOString().split('T')[0];
           break;
-        case RevenuePeriod.WEEKLY:
-          { const firstDayOfWeek = new Date(date);
+        case RevenuePeriod.WEEKLY: {
+          const firstDayOfWeek = new Date(date);
           firstDayOfWeek.setDate(date.getDate() - date.getDay());
           key = firstDayOfWeek.toISOString().split('T')[0];
-          break; }
+          break;
+        }
         case RevenuePeriod.MONTHLY:
           key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-01`;
           break;

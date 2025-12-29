@@ -6,17 +6,25 @@ import {
 import { PrismaService } from '../prisma/prisma.service';
 import { CreatePromotionDto } from './dto/create-promotion.dto';
 import { UpdatePromotionDto } from './dto/update-promotion.dto';
-import { TogglePromotionDto } from './dto/toggle-promotion.dto';
-import { PromotionFilterDto } from './dto/promotion-filter.dto';
-import { Promotion } from '@prisma/client';
 
 @Injectable()
 export class PromotionsService {
   constructor(private prisma: PrismaService) {}
 
   async create(createPromotionDto: CreatePromotionDto) {
-    const { validFrom, validUntil, discount, discountType } =
+    const { menuItemId, priceCurrent, validFrom, validUntil } =
       createPromotionDto;
+
+    // Validar se o item do cardápio existe
+    const menuItem = await this.prisma.menuItem.findUnique({
+      where: { id: menuItemId },
+    });
+
+    if (!menuItem) {
+      throw new NotFoundException(
+        `Item do cardápio #${menuItemId} não encontrado`,
+      );
+    }
 
     // Validar datas
     const from = new Date(validFrom);
@@ -28,48 +36,66 @@ export class PromotionsService {
       );
     }
 
-    // Validar desconto percentual
-    if (discountType === 'PERCENTAGE' && (discount < 0 || discount > 100)) {
+    // Validar se o novo preço é válido
+    if (priceCurrent < 0) {
+      throw new BadRequestException('O preço não pode ser negativo');
+    }
+
+    if (priceCurrent >= menuItem.priceReal) {
       throw new BadRequestException(
-        'Desconto percentual deve estar entre 0 e 100',
+        'O preço com desconto deve ser menor que o preço original',
       );
     }
 
-    // Validar desconto fixo
-    if (discountType === 'FIXED' && discount < 0) {
-      throw new BadRequestException('Desconto fixo não pode ser negativo');
+    // Verificar se já existe uma promoção ativa para este item
+    const existingPromotion = await this.prisma.promotion.findUnique({
+      where: { menuItemId },
+    });
+
+    if (existingPromotion && existingPromotion.active) {
+      throw new BadRequestException(
+        'Já existe uma promoção ativa para este item',
+      );
     }
 
-    const promotion = await this.prisma.promotion.create({
-      data: {
-        ...createPromotionDto,
-        validFrom: from,
-        validUntil: until,
-      },
+    // Se existe uma promoção inativa, delete antes de criar uma nova
+    if (existingPromotion) {
+      await this.prisma.promotion.delete({
+        where: { id: existingPromotion.id },
+      });
+    }
+
+    // Criar promoção e atualizar o preço do item
+    const promotion = await this.prisma.$transaction(async (tx) => {
+      // Atualizar o preço atual do item
+      await tx.menuItem.update({
+        where: { id: menuItemId },
+        data: { priceCurrent },
+      });
+
+      // Criar a promoção
+      return tx.promotion.create({
+        data: {
+          menuItemId,
+          priceCurrent,
+          validFrom: from,
+          validUntil: until,
+          active: true,
+        },
+        include: {
+          menuItem: true,
+        },
+      });
     });
 
     return promotion;
   }
 
-  async findAll(filters?: PromotionFilterDto) {
-    const where: any = {};
-
-    if (filters?.active !== undefined) {
-      where.active = filters.active;
-    }
-
-    if (filters?.discountType) {
-      where.discountType = filters.discountType;
-    }
-
-    if (filters?.validNow) {
-      const now = new Date();
-      where.validFrom = { lte: now };
-      where.validUntil = { gte: now };
-    }
-
+  async findAll() {
     const promotions = await this.prisma.promotion.findMany({
-      where,
+      include: {
+        menuItem: true,
+      },
       orderBy: {
         createdAt: 'desc',
       },
@@ -81,6 +107,9 @@ export class PromotionsService {
   async findOne(id: string) {
     const promotion = await this.prisma.promotion.findUnique({
       where: { id },
+      include: {
+        menuItem: true,
+      },
     });
 
     if (!promotion) {
@@ -91,17 +120,41 @@ export class PromotionsService {
   }
 
   async update(id: string, updatePromotionDto: UpdatePromotionDto) {
-    await this.findOne(id);
+    const promotion = await this.findOne(id);
+
+    // Se está atualizando o menuItemId, validar se o novo item existe
+    if (
+      updatePromotionDto.menuItemId &&
+      updatePromotionDto.menuItemId !== promotion.menuItemId
+    ) {
+      const newMenuItem = await this.prisma.menuItem.findUnique({
+        where: { id: updatePromotionDto.menuItemId },
+      });
+
+      if (!newMenuItem) {
+        throw new NotFoundException(
+          `Item do cardápio #${updatePromotionDto.menuItemId} não encontrado`,
+        );
+      }
+
+      // Verificar se já existe outra promoção para este novo item
+      const existingPromotion = await this.prisma.promotion.findUnique({
+        where: { menuItemId: updatePromotionDto.menuItemId },
+      });
+
+      if (existingPromotion && existingPromotion.id !== id) {
+        throw new BadRequestException('Já existe uma promoção para este item');
+      }
+    }
 
     // Validar datas se fornecidas
     if (updatePromotionDto.validFrom || updatePromotionDto.validUntil) {
-      const existing = await this.findOne(id);
       const from = updatePromotionDto.validFrom
         ? new Date(updatePromotionDto.validFrom)
-        : existing.validFrom;
+        : promotion.validFrom;
       const until = updatePromotionDto.validUntil
         ? new Date(updatePromotionDto.validUntil)
-        : existing.validUntil;
+        : promotion.validUntil;
 
       if (from >= until) {
         throw new BadRequestException(
@@ -110,46 +163,83 @@ export class PromotionsService {
       }
     }
 
-    const promotion = await this.prisma.promotion.update({
-      where: { id },
-      data: {
-        ...updatePromotionDto,
-        validFrom: updatePromotionDto.validFrom
-          ? new Date(updatePromotionDto.validFrom)
-          : undefined,
-        validUntil: updatePromotionDto.validUntil
-          ? new Date(updatePromotionDto.validUntil)
-          : undefined,
-      },
+    // Se está atualizando o preço, validar
+    if (updatePromotionDto.priceCurrent !== undefined) {
+      if (updatePromotionDto.priceCurrent < 0) {
+        throw new BadRequestException('O preço não pode ser negativo');
+      }
+
+      const priceReal = promotion.menuItem.priceReal;
+      if (updatePromotionDto.priceCurrent >= priceReal) {
+        throw new BadRequestException(
+          'O preço com desconto deve ser menor que o preço original',
+        );
+      }
+    }
+
+    // Atualizar a promoção
+    const newPromotion = await this.prisma.$transaction(async (tx) => {
+      // Se houver mudança de item, restaurar o preço do item antigo
+      if (
+        updatePromotionDto.menuItemId &&
+        updatePromotionDto.menuItemId !== promotion.menuItemId
+      ) {
+        await tx.menuItem.update({
+          where: { id: promotion.menuItemId },
+          data: { priceCurrent: promotion.menuItem.priceReal }, // Restaurar preço real
+        });
+      }
+
+      // Atualizar o item com o novo preço se necessário
+      if (updatePromotionDto.priceCurrent !== undefined) {
+        const itemId = updatePromotionDto.menuItemId || promotion.menuItemId;
+        await tx.menuItem.update({
+          where: { id: itemId },
+          data: { priceCurrent: updatePromotionDto.priceCurrent },
+        });
+      }
+
+      // Atualizar a promoção
+      return tx.promotion.update({
+        where: { id },
+        data: {
+          menuItemId: updatePromotionDto.menuItemId,
+          priceCurrent: updatePromotionDto.priceCurrent,
+          validFrom: updatePromotionDto.validFrom
+            ? new Date(updatePromotionDto.validFrom)
+            : undefined,
+          validUntil: updatePromotionDto.validUntil
+            ? new Date(updatePromotionDto.validUntil)
+            : undefined,
+        },
+        include: {
+          menuItem: true,
+        },
+      });
     });
 
-    return promotion;
-  }
-
-  async toggleActive(id: string, togglePromotionDto: TogglePromotionDto) {
-    await this.findOne(id);
-
-    const promotion = await this.prisma.promotion.update({
-      where: { id },
-      data: {
-        active: togglePromotionDto.active,
-      },
-    });
-
-    return promotion;
+    return newPromotion;
   }
 
   async remove(id: string) {
-    await this.findOne(id);
+    const promotion = await this.findOne(id);
 
-    await this.prisma.promotion.delete({
-      where: { id },
+    // Remover a promoção e restaurar o preço original do item
+    await this.prisma.$transaction(async (tx) => {
+      // Restaurar o preço real do item
+      await tx.menuItem.update({
+        where: { id: promotion.menuItemId },
+        data: { priceCurrent: promotion.menuItem.priceReal },
+      });
+
+      // Deletar a promoção
+      await tx.promotion.delete({
+        where: { id },
+      });
     });
 
     return { message: `Promoção #${id} removida com sucesso` };
   }
-
-  // Métodos auxiliares
 
   async getActivePromotions() {
     const now = new Date();
@@ -160,78 +250,23 @@ export class PromotionsService {
         validFrom: { lte: now },
         validUntil: { gte: now },
       },
+      include: {
+        menuItem: true,
+      },
       orderBy: {
-        discount: 'desc',
+        createdAt: 'desc',
       },
     });
   }
 
-  async calculateDiscount(
-    originalPrice: number,
-    promotionId: string,
-  ): Promise<number> {
-    const promotion = await this.findOne(promotionId);
+  async getPromotionByMenuItem(menuItemId: string) {
+    const promotion = await this.prisma.promotion.findUnique({
+      where: { menuItemId },
+      include: {
+        menuItem: true,
+      },
+    });
 
-    if (!promotion.active) {
-      throw new BadRequestException('Promoção não está ativa');
-    }
-
-    const now = new Date();
-    if (now < promotion.validFrom || now > promotion.validUntil) {
-      throw new BadRequestException('Promoção não está válida no momento');
-    }
-
-    let discount = 0;
-
-    if (promotion.discountType === 'PERCENTAGE') {
-      discount = originalPrice * (promotion.discount / 100);
-    } else {
-      discount = promotion.discount;
-    }
-
-    // Garantir que o desconto não seja maior que o preço
-    return Math.min(discount, originalPrice);
-  }
-
-  async applyBestPromotion(originalPrice: number): Promise<{
-    finalPrice: number;
-    promotion: Promotion | null;
-    discount: number;
-  }> {
-    const activePromotions = await this.getActivePromotions();
-
-    if (activePromotions.length === 0) {
-      return {
-        finalPrice: originalPrice,
-        promotion: null,
-        discount: 0,
-      };
-    }
-
-    let bestDiscount = 0;
-    let bestPromotion: Promotion | null = null;
-
-    for (const promo of activePromotions) {
-      let discount = 0;
-
-      if (promo.discountType === 'PERCENTAGE') {
-        discount = originalPrice * (promo.discount / 100);
-      } else {
-        discount = promo.discount;
-      }
-
-      if (discount > bestDiscount) {
-        bestDiscount = discount;
-        bestPromotion = promo;
-      }
-    }
-
-    const finalDiscount = Math.min(bestDiscount, originalPrice);
-
-    return {
-      finalPrice: originalPrice - finalDiscount,
-      promotion: bestPromotion,
-      discount: finalDiscount,
-    };
+    return promotion || null;
   }
 }

@@ -8,7 +8,12 @@ export class MenuService {
   constructor(private readonly prisma: PrismaService) {}
 
   create(data: CreateMenuItemDto) {
-    return this.prisma.menuItem.create({ data });
+    return this.prisma.menuItem.create({
+      data: {
+        ...data,
+        priceCurrent: data.priceReal, // Inicialmente o preço atual é igual ao real
+      },
+    });
   }
 
   findAll() {
@@ -43,5 +48,4 @@ export class MenuService {
       categories: items.map((item) => item.category).filter(Boolean),
     };
   }
-  
 }

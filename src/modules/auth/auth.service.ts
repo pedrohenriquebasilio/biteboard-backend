@@ -67,8 +67,7 @@ export class AuthService {
   private async buildAuthResponse(
     restaurant: Restaurant,
   ): Promise<AuthResponseDto> {
-    const expiresIn =
-      this.configService.get<string>('JWT_EXPIRES_IN') ?? '1d';
+    const expiresIn = this.configService.get<string>('JWT_EXPIRES_IN') ?? '1d';
 
     const payload = {
       sub: restaurant.id,
