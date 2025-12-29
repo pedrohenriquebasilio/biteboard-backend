@@ -10,6 +10,7 @@ import { FinancialModule } from './modules/financial/financial.module';
 import { ConversationsModule } from './modules/conversations/conversations.module';
 import { ConfigModule } from '@nestjs/config';
 import { PrismaModule } from './modules/prisma/prisma.module';
+import { WebhookGatewayModule } from './modules/webhook-gateway/webhook-gateway.module';
 
 @Module({
   imports: [
@@ -24,6 +25,7 @@ import { PrismaModule } from './modules/prisma/prisma.module';
     DashboardModule,
     FinancialModule,
     ConversationsModule,
+    WebhookGatewayModule,
   ],
   controllers: [],
   providers: [],
