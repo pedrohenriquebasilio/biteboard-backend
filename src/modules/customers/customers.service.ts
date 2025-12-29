@@ -29,13 +29,15 @@ export class CustomersService {
 
     return [customer];
   }
-  async existsByPhone(phone: string): Promise<boolean> {
+  async existsByPhone(phone: string) {
     const customer = await this.prisma.customer.findUnique({
       where: { phone },
       select: { id: true },
     });
 
-    return !!customer;
+    return {
+      exists: !!customer,
+    };
   }
 
   async getAddress(phone: string) {
