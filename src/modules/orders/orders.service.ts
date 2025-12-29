@@ -240,4 +240,24 @@ export class OrdersService {
       })),
     };
   }
+
+  async getLastOrderByPhone(phone: string) {
+    const lastOrder = await this.prisma.order.findFirst({
+      where: {
+        customerPhone: phone,
+      },
+      include: {
+        items: {
+          include: {
+            menuItem: true,
+          },
+        },
+      },
+      orderBy: {
+        createdAt: 'desc',
+      },
+    });
+
+    return lastOrder;
+  }
 }
