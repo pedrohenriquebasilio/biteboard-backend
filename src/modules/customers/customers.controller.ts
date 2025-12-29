@@ -20,6 +20,10 @@ export class CustomersController {
   findByPhone(@Param('phone') phone: string) {
     return this.service.findByPhone(phone);
   }
+  @Get('isclient/:phone')
+  existsByPhone(@Param('phone') phone: string) {
+    return this.service.existsByPhone(phone);
+  }
 
   @Get('address/:phone')
   getAddress(@Param('phone') phone: string) {
