@@ -11,7 +11,7 @@ import {
   HttpStatus,
   Res,
 } from '@nestjs/common';
-import { Response } from 'express';
+import type { Response } from 'express';
 import { OrdersService } from './orders.service';
 import { CreateOrderDto } from './dto/create-order.dto';
 import { OrderFilterDto } from './dto/order-filter.dto';
