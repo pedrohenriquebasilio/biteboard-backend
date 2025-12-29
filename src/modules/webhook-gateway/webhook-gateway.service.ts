@@ -14,7 +14,7 @@ export class WebhookGatewayService {
   ) {}
 
   /**
-   * Extrai o número de telefone do campo sender
+   * Extrai o número de telefone do campo senderPn
    * Remove tudo após o último número (ex: "553184503630@s.whatsapp.net" -> "553184503630")
    */
   private extractPhoneNumber(sender: string): string {
@@ -28,29 +28,30 @@ export class WebhookGatewayService {
    */
   async routeWebhook(payload: WebhookPayloadDto): Promise<void> {
     try {
-      // Extrair o sender do payload - pode estar em sender ou data.sender
-      // Prioridade: sender primeiro (campo direto no payload)
-      let sender: string | undefined = payload.sender as string | undefined;
+      // Extrair o senderPn do payload em data.key.senderPn
+      let senderPn: string | undefined;
 
-      if (!sender && payload.data && typeof payload.data === 'object') {
-        const dataSender = (payload.data as { sender?: string }).sender;
-        sender = dataSender;
+      if (payload.data && typeof payload.data === 'object') {
+        const dataObj = payload.data as { key?: { senderPn?: string } };
+        if (dataObj.key && typeof dataObj.key === 'object') {
+          senderPn = dataObj.key.senderPn;
+        }
       }
 
-      if (!sender || typeof sender !== 'string') {
+      if (!senderPn || typeof senderPn !== 'string') {
         this.logger.warn(
-          'Campo sender não encontrado no payload do webhook',
+          'Campo senderPn não encontrado no payload do webhook (data.key.senderPn)',
           JSON.stringify(payload, null, 2),
         );
         return;
       }
 
       // Extrair apenas os números do telefone
-      const phoneNumber = this.extractPhoneNumber(sender);
+      const phoneNumber = this.extractPhoneNumber(senderPn);
 
       if (!phoneNumber) {
         this.logger.warn(
-          `Não foi possível extrair número de telefone do sender: ${sender}`,
+          `Não foi possível extrair número de telefone do senderPn: ${senderPn}`,
         );
         return;
       }
