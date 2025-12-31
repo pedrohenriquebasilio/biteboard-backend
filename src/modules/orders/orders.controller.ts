@@ -7,7 +7,6 @@ import {
   Param,
   Delete,
   Query,
-  HttpCode,
   HttpStatus,
   Res,
 } from '@nestjs/common';
