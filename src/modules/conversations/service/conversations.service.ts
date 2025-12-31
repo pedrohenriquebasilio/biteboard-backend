@@ -305,6 +305,7 @@ export class ConversationsService {
     timestamp: string;
     status: string;
     customerName: string;
+    instance?: string;
   }): Promise<void> {
     try {
       const webhookUrl = this.configService.get<string>(
@@ -318,12 +319,23 @@ export class ConversationsService {
         return;
       }
 
-      await axios.post(webhookUrl, messageData);
+      // Adicionar instance se disponível (via variável de ambiente ou passado no messageData)
+      const instance =
+        messageData.instance ||
+        this.configService.get<string>('EVOLUTION_INSTANCE_NAME');
+
+      const payload = {
+        ...messageData,
+        ...(instance && { instance }),
+      };
+
+      await axios.post(webhookUrl, payload);
 
       console.log('[ConversationsService] Mensagem enviada para N8N webhook:', {
         messageId: messageData.id,
         text: messageData.text,
         timestamp: messageData.timestamp,
+        instance: instance || 'não configurado',
       });
     } catch (error) {
       console.error(
