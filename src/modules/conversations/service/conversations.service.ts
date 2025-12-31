@@ -455,8 +455,24 @@ export class ConversationsService {
 
     const fromMe = this.getBoolean(key, 'fromMe');
 
-    const rawJid = this.getString(key, 'remoteJid');
-    const phone = rawJid ? this.normalizePhone(rawJid) : undefined;
+    // Usar senderPn ao invés de remoteJid para obter o telefone correto
+    // senderPn vem no formato: 553182366026@s.whatsapp.net
+    // Precisamos extrair apenas a parte antes do @
+    const senderPn = this.getString(key, 'senderPn');
+    let phone: string | undefined;
+
+    if (senderPn) {
+      // Extrair apenas a parte antes do @
+      const phonePart = senderPn.split('@')[0];
+      phone = this.normalizePhone(phonePart);
+    }
+
+    // Fallback para remoteJid se senderPn não estiver disponível (para compatibilidade)
+    if (!phone) {
+      const rawJid = this.getString(key, 'remoteJid');
+      phone = rawJid ? this.normalizePhone(rawJid) : undefined;
+    }
+
     if (!phone) return null;
 
     const messageId = this.getString(key, 'id');
@@ -521,7 +537,7 @@ export class ConversationsService {
     const withoutDomain = raw.includes('@') ? raw.split('@')[0] : raw;
     const digits = withoutDomain.replace(/\D/g, '');
     if (!digits) return undefined;
-    return digits.startsWith('+') ? digits : `+${digits}`;
+    return digits;
   }
 
   private buildDate(value: number | undefined): Date {
