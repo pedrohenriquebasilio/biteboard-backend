@@ -1,15 +1,22 @@
 import {
   Injectable,
+  Logger,
   NotFoundException,
   BadRequestException,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreatePromotionDto } from './dto/create-promotion.dto';
 import { UpdatePromotionDto } from './dto/update-promotion.dto';
 
 @Injectable()
 export class PromotionsService {
-  constructor(private prisma: PrismaService) {}
+  private readonly logger = new Logger(PromotionsService.name);
+
+  constructor(
+    private prisma: PrismaService,
+    private configService: ConfigService,
+  ) {}
 
   async create(createPromotionDto: CreatePromotionDto) {
     const { menuItemId, priceCurrent, validFrom, validUntil } =
@@ -268,5 +275,67 @@ export class PromotionsService {
     });
 
     return promotion || null;
+  }
+
+  async notifyWhatsapp(promotionId: string) {
+    const promotion = await this.prisma.promotion.findUnique({
+      where: { id: promotionId },
+      include: { menuItem: true },
+    });
+
+    if (!promotion) {
+      throw new NotFoundException(
+        `Promoção #${promotionId} não encontrada`,
+      );
+    }
+
+    const customers = await this.prisma.customer.findMany({
+      where: {
+        isPromotions: true,
+        phone: { not: '' },
+      },
+      select: { phone: true },
+    });
+
+    if (customers.length === 0) {
+      this.logger.warn('Nenhum cliente optou por receber promoções via WhatsApp');
+      return { notifiedCount: 0 };
+    }
+
+    const webhookUrl = this.configService.get<string>('WEBHOOK_PROMOTIONS_URL');
+
+    if (!webhookUrl) {
+      this.logger.warn(
+        'WEBHOOK_PROMOTIONS_URL não configurada. Notificação não enviada.',
+      );
+      return { notifiedCount: 0 };
+    }
+
+    const payload = {
+      promotion: {
+        id: promotion.id,
+        menuItemName: promotion.menuItem.name,
+        priceOriginal: promotion.menuItem.priceReal,
+        pricePromo: promotion.priceCurrent,
+        validFrom: promotion.validFrom.toISOString(),
+        validUntil: promotion.validUntil.toISOString(),
+      },
+      phones: customers.map((c) => c.phone),
+    };
+
+    // Fire-and-forget
+    fetch(webhookUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    }).catch((err) => {
+      this.logger.error(`Erro ao enviar webhook de promoções: ${err.message}`);
+    });
+
+    this.logger.log(
+      `Notificação WhatsApp disparada para ${customers.length} cliente(s)`,
+    );
+
+    return { notifiedCount: customers.length };
   }
 }

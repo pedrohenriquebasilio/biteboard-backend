@@ -25,6 +25,11 @@ export class PromotionsController {
     return this.promotionsService.findAll();
   }
 
+  @Post('notify-whatsapp')
+  notifyWhatsapp(@Body() body: { promotionId: string }) {
+    return this.promotionsService.notifyWhatsapp(body.promotionId);
+  }
+
   @Get('active')
   getActivePromotions() {
     return this.promotionsService.getActivePromotions();

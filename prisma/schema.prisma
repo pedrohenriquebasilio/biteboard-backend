@@ -68,12 +68,13 @@ model Order {
 }
 
 model Customer {
-  id        String   @id @default(uuid())
-  name      String
-  phone     String   @unique
-  endereco  String?
-  lastOrder DateTime?
-  createdAt DateTime @default(now())
+  id           String   @id @default(uuid())
+  name         String
+  phone        String   @unique
+  endereco     String?
+  lastOrder    DateTime?
+  isPromotions Boolean  @default(false)
+  createdAt    DateTime @default(now())
 }
 
 model OrderItem {

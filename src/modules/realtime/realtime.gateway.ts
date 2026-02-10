@@ -11,7 +11,7 @@ import { Logger } from '@nestjs/common';
 
 @WebSocketGateway({
   cors: {
-    origin: '*', // Em produção, configure para seu domínio específico
+    origin: '*', 
   },
 })
 export class RealtimeGateway
