@@ -455,22 +455,24 @@ export class ConversationsService {
 
     const fromMe = this.getBoolean(key, 'fromMe');
 
-    // Usar senderPn ao invés de remoteJid para obter o telefone correto
-    // senderPn vem no formato: 553182366026@s.whatsapp.net
-    // Precisamos extrair apenas a parte antes do @
     const senderPn = this.getString(key, 'senderPn');
+    const rawJid = this.getString(key, 'remoteJid');
     let phone: string | undefined;
 
-    if (senderPn) {
-      // Extrair apenas a parte antes do @
-      const phonePart = senderPn.split('@')[0];
-      phone = this.normalizePhone(phonePart);
-    }
-
-    // Fallback para remoteJid se senderPn não estiver disponível (para compatibilidade)
-    if (!phone) {
-      const rawJid = this.getString(key, 'remoteJid');
+    // Quando fromMe: true, senderPn é o número do restaurante
+    // Nesse caso, usamos remoteJid para pegar o telefone do cliente
+    if (fromMe) {
       phone = rawJid ? this.normalizePhone(rawJid) : undefined;
+      if (!phone && senderPn) {
+        phone = this.normalizePhone(senderPn.split('@')[0]);
+      }
+    } else {
+      if (senderPn) {
+        phone = this.normalizePhone(senderPn.split('@')[0]);
+      }
+      if (!phone && rawJid) {
+        phone = this.normalizePhone(rawJid);
+      }
     }
 
     if (!phone) return null;

@@ -38,26 +38,36 @@ export class WebhookGatewayService {
    */
   async routeWebhook(payload: WebhookPayloadDto): Promise<void> {
     try {
-      // Extrair o senderPn do payload em data.key.senderPn
+      // Extrair dados do payload
       let senderPn: string | undefined;
+      let remoteJid: string | undefined;
+      let fromMe = false;
 
       if (payload.data && typeof payload.data === 'object') {
-        const dataObj = payload.data as { key?: { senderPn?: string } };
+        const dataObj = payload.data as {
+          key?: { senderPn?: string; remoteJid?: string; fromMe?: boolean };
+        };
         if (dataObj.key && typeof dataObj.key === 'object') {
           senderPn = dataObj.key.senderPn;
+          remoteJid = dataObj.key.remoteJid;
+          fromMe = dataObj.key.fromMe === true;
         }
       }
 
-      if (!senderPn || typeof senderPn !== 'string') {
+      // Quando fromMe: true, senderPn é o número do restaurante
+      // Nesse caso, usamos remoteJid para pegar o telefone do cliente
+      const rawPhone = fromMe ? remoteJid || senderPn : senderPn || remoteJid;
+
+      if (!rawPhone || typeof rawPhone !== 'string') {
         this.logger.warn(
-          'Campo senderPn não encontrado no payload do webhook (data.key.senderPn)',
+          'Não foi possível extrair telefone do payload do webhook',
           JSON.stringify(payload, null, 2),
         );
         return;
       }
 
       // Extrair apenas os números do telefone
-      const phoneNumber = this.extractPhoneNumber(senderPn);
+      const phoneNumber = this.extractPhoneNumber(rawPhone);
 
       if (!phoneNumber) {
         this.logger.warn(
@@ -97,6 +107,14 @@ export class WebhookGatewayService {
           error instanceof Error ? error.stack : undefined,
         );
         // Não interrompe o fluxo, continua com o roteamento
+      }
+
+      // Mensagens fromMe (enviadas pelo N8N/Evolution) não precisam ser roteadas de volta
+      if (fromMe) {
+        this.logger.log(
+          `Mensagem fromMe salva no banco. Telefone: ${phoneNumber}. Não será roteada para webhook externo.`,
+        );
+        return;
       }
 
       // Determinar qual webhook usar baseado na existência do cliente
